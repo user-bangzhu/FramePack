@@ -1,0 +1,75 @@
+  8 changes: 7 additions & 1 deletion8  
+demo_gradio.py
+Viewed
+Original file line number	Diff line number	Diff line change
+@@ -17,6 +17,7 @@
+from diffusers import AutoencoderKLHunyuanVideo
+from transformers import LlamaModel, CLIPTextModel, LlamaTokenizerFast, CLIPTokenizer
+from diffusers_helper.hunyuan import encode_prompt_conds, vae_decode, vae_encode, vae_decode_fake
+from diffusers_helper.load_lora import load_lora
+from diffusers_helper.utils import save_bcthw_as_mp4, crop_or_pad_yield_mask, soft_append_bcthw, resize_and_center_crop, state_dict_weighted_merge, state_dict_offset_merge, generate_timestamp
+from diffusers_helper.models.hunyuan_video_packed import HunyuanVideoTransformer3DModelPacked
+from diffusers_helper.pipelines.k_diffusion_hunyuan import sample_hunyuan
+@@ -33,6 +34,7 @@
+parser.add_argument("--server", type=str, default='0.0.0.0')
+parser.add_argument("--port", type=int, required=False)
+parser.add_argument("--inbrowser", action='store_true')
+parser.add_argument("--lora", type=str, default=None, help="Lora path")
+args = parser.parse_args()
+
+# for win desktop probably use --server 127.0.0.1 --inbrowser
+@@ -68,7 +70,6 @@
+    vae.enable_tiling()
+
+transformer.high_quality_fp32_output_for_inference = True
+print('transformer.high_quality_fp32_output_for_inference = True')
+
+transformer.to(dtype=torch.bfloat16)
+vae.to(dtype=torch.float16)
+@@ -82,6 +83,11 @@
+image_encoder.requires_grad_(False)
+transformer.requires_grad_(False)
+
+if args.lora:
+    lora = args.lora
+    lora_path, lora_name = os.path.split(lora)
+    transformer = load_lora(transformer, lora_path, lora_name)
+
+if not high_vram:
+    # DynamicSwapInstaller is same as huggingface's enable_sequential_offload but 3x faster
+    DynamicSwapInstaller.install_model(transformer, device=gpu)
+ 33 changes: 33 additions & 0 deletions33  
+diffusers_helper/load_lora.py
+Viewed
+Original file line number	Diff line number	Diff line change
+@@ -0,0 +1,33 @@
+from pathlib import Path
+from typing import Optional
+from diffusers.loaders.lora_pipeline import _fetch_state_dict
+
+def load_lora(transformer, lora_path: Path, weight_name: Optional[str] = "pytorch_lora_weights.safetensors"):
+    """
+    Load LoRA weights into the transformer model.
+    Args:
+        transformer: The transformer model to which LoRA weights will be applied.
+        lora_path (Path): Path to the LoRA weights file.
+        weight_name (Optional[str]): Name of the weight to load.
+    """
+
+    state_dict = _fetch_state_dict(
+    lora_path,
+    weight_name,
+    True,
+    True,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None)
+
+    transformer.load_lora_adapter(state_dict, network_alphas=None)
+    print("LoRA weights loaded successfully.")
+    return transformer
